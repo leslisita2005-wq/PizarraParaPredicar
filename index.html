@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pizarra Ágil de Predicación</title>
+  
+  <!-- Conector oficial de Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
@@ -22,6 +26,7 @@
       display: flex;
       gap: 20px;
       justify-content: center;
+      flex-wrap: wrap;
     }
 
     .columna {
@@ -39,18 +44,31 @@
 
     .tarjeta {
       background: rgba(255,255,255,0.2);
-      margin: 5px 0;
+      margin: 8px 0;
       padding: 10px;
       border-radius: 8px;
-      cursor: grab;
+      position: relative; /* Para acomodar los botones dentro */
     }
 
-    .tarjeta:active {
-      cursor: grabbing;
+    .acciones-tarjeta {
+      margin-top: 8px;
+      display: flex;
+      gap: 5px;
+      justify-content: flex-end;
     }
 
-    .columna.dragover {
+    .btn-accion {
       background: rgba(255,255,255,0.3);
+      color: white;
+      border: none;
+      padding: 3px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .btn-accion:hover {
+      background: rgba(255,255,255,0.5);
     }
 
     .formulario {
@@ -68,6 +86,7 @@
     button {
       background: #ffcc00;
       cursor: pointer;
+      font-weight: bold;
     }
   </style>
 </head>
@@ -75,6 +94,9 @@
   <h1>📌 Pizarra Ágil de Predicación</h1>
 
   <div class="formulario">
+    <!-- Este campo oculto nos ayuda a saber si estamos editando una tarjeta existente -->
+    <input type="hidden" id="tarjeta_id">
+    
     <input type="text" id="nombre" placeholder="Tu nombre" required>
     <select id="dia">
       <option value="lunes">Lunes</option>
@@ -86,73 +108,126 @@
       <option value="domingo">Domingo</option>
     </select>
     <input type="time" id="hora" required>
-    <button onclick="agregarTarjeta()">Anotarme</button>
+    <button id="btn-guardar" onclick="agregarOModificarTarjeta()">Anotarme</button>
   </div>
 
   <div class="tablero">
-    <div class="columna" id="lunes" ondragover="allowDrop(event)" ondrop="drop(event)">
-      <h2>Lunes</h2>
-    </div>
-    <div class="columna" id="martes" ondragover="allowDrop(event)" ondrop="drop(event)">
-      <h2>Martes</h2>
-    </div>
-    <div class="columna" id="miércoles" ondragover="allowDrop(event)" ondrop="drop(event)">
-      <h2>Miércoles</h2>
-    </div>
-    <div class="columna" id="jueves" ondragover="allowDrop(event)" ondrop="drop(event)">
-      <h2>Jueves</h2>
-    </div>
-    <div class="columna" id="viernes" ondragover="allowDrop(event)" ondrop="drop(event)">
-      <h2>Viernes</h2>
-    </div>
-    <div class="columna" id="sábado" ondragover="allowDrop(event)" ondrop="drop(event)">
-      <h2>Sábado</h2>
-    </div>
-    <div class="columna" id="domingo" ondragover="allowDrop(event)" ondrop="drop(event)">
-      <h2>Domingo</h2>
-    </div>
+    <div class="columna" id="lunes"><h2>Lunes</h2></div>
+    <div class="columna" id="martes"><h2>Martes</h2></div>
+    <div class="columna" id="miércoles"><h2>Miércoles</h2></div>
+    <div class="columna" id="jueves"><h2>Jueves</h2></div>
+    <div class="columna" id="viernes"><h2>Viernes</h2></div>
+    <div class="columna" id="sábado"><h2>Sábado</h2></div>
+    <div class="columna" id="domingo"><h2>Domingo</h2></div>
   </div>
 
   <script>
-    let contador = 0;
+    // Configuración del puente con tu base de datos
+    const SUPABASE_URL = "https://vbrxgzvnklkkjmwcxagj.supabase.co";
+    
+    // ⚠️ REEMPLAZA las letras de abajo por tu clave "Anon KEY" larga de Supabase
+    const SUPABASE_KEY = "vbrxgzvnklkkjmwcxagj"; 
 
-    function agregarTarjeta() {
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // Al cargar la página, se leen de inmediato los datos guardados en la nube
+    window.onload = async function() {
+      await cargarTarjetas();
+    }
+
+    async function cargarTarjetas() {
+      const dias = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+      dias.forEach(d => {
+        const col = document.getElementById(d);
+        col.innerHTML = `<h2>${d.charAt(0).toUpperCase() + d.slice(1)}</h2>`;
+      });
+
+      // Traer los datos desde la tabla de Supabase ordenados por hora
+      const { data, error } = await supabase
+        .from('predicacion')
+        .select('*')
+        .order('hora', { ascending: true });
+
+      if (error) {
+        console.error("Error cargando datos:", error);
+        return;
+      }
+
+      if (data) {
+        data.forEach(item => {
+          const tarjeta = document.createElement('div');
+          tarjeta.className = 'tarjeta';
+          tarjeta.innerHTML = `
+            <strong>${item.nombre}</strong><br>${item.hora}
+            <div class="acciones-tarjeta">
+              <button class="btn-accion" onclick="prepararEdicion(${item.id}, '${item.nombre}', '${item.dia}', '${item.hora}')">✏️ Editar</button>
+              <button class="btn-accion" style="background: rgba(255,0,0,0.4);" onclick="eliminarTarjeta(${item.id})">🗑️ Borrar</button>
+            </div>
+          `;
+          document.getElementById(item.dia).appendChild(tarjeta);
+        });
+      }
+    }
+
+    async function agregarOModificarTarjeta() {
+      const id = document.getElementById('tarjeta_id').value;
       const nombre = document.getElementById('nombre').value;
       const dia = document.getElementById('dia').value;
       const hora = document.getElementById('hora').value;
 
       if(nombre && dia && hora) {
-        const tarjeta = document.createElement('div');
-        tarjeta.className = 'tarjeta';
-        tarjeta.draggable = true;
-        tarjeta.id = 'tarjeta' + contador++;
-        tarjeta.innerHTML = `<strong>${nombre}</strong><br>${hora}`;
-        tarjeta.ondragstart = drag;
+        if (id) {
+          // MODO EDITAR: Si ya existe un ID, actualiza esa tarjeta en Supabase
+          const { error } = await supabase
+            .from('predicacion')
+            .update({ nombre: nombre, dia: dia, hora: hora })
+            .eq('id', id);
 
-        document.getElementById(dia).appendChild(tarjeta);
+          if (error) alert("Error al modificar.");
+        } else {
+          // MODO NUEVO: Si no hay ID, inserta una tarjeta nueva
+          const { error } = await supabase
+            .from('predicacion')
+            .insert([{ nombre: nombre, dia: dia, hora: hora }]);
 
+          if (error) alert("Error al guardar.");
+        }
+
+        // Limpiar el formulario y reestablecer el botón principal
+        document.getElementById('tarjeta_id').value = '';
         document.getElementById('nombre').value = '';
         document.getElementById('hora').value = '';
+        document.getElementById('btn-guardar').innerText = 'Anotarme';
+        
+        await cargarTarjetas();
       } else {
         alert("Completa todos los campos.");
       }
     }
 
-    function drag(event) {
-      event.dataTransfer.setData("text", event.target.id);
+    // Pone los datos de la tarjeta en el formulario de arriba para poder cambiarlos
+    function prepararEdicion(id, nombre, dia, hora) {
+      document.getElementById('tarjeta_id').value = id;
+      document.getElementById('nombre').value = nombre;
+      document.getElementById('dia').value = dia;
+      document.getElementById('hora').value = hora;
+      document.getElementById('btn-guardar').innerText = '💾 Guardar Cambios';
+      window.scrollTo(0, 0); // Sube la pantalla en el celular para ver el formulario
     }
 
-    function allowDrop(event) {
-      event.preventDefault();
-      event.currentTarget.classList.add("dragover");
-    }
+    async function eliminarTarjeta(id) {
+      if (confirm("¿Estás seguro de que deseas quitar tu turno de la pizarra?")) {
+        const { error } = await supabase
+          .from('predicacion')
+          .delete()
+          .eq('id', id);
 
-    function drop(event) {
-      event.preventDefault();
-      const data = event.dataTransfer.getData("text");
-      const tarjeta = document.getElementById(data);
-      event.currentTarget.appendChild(tarjeta);
-      event.currentTarget.classList.remove("dragover");
+        if (error) {
+          alert("Error al eliminar.");
+        } else {
+          await cargarTarjetas();
+        }
+      }
     }
   </script>
 </body>
