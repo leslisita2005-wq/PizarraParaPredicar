@@ -123,10 +123,13 @@
 
   <script>
     // Configuración del puente con tu base de datos
+    // Configuración del puente con tu base de datos
     const SUPABASE_URL = "https://vbrxgzvnklkkjmwcxagj.supabase.co";
     
-    // ⚠️ REEMPLAZA las letras de abajo por tu clave "Anon KEY" larga de Supabase
+    // Tu clave oficial y moderna de Supabase
     const SUPABASE_KEY = "sb_publishable_TE6ujP96_tZV9oDGwu4lIQ_U8RfZL6E"; 
+
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
